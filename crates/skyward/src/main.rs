@@ -519,6 +519,18 @@ fn load_modules(cfg: &DeviceConfig, names: &[String]) -> Result<Vec<PathBuf>> {
 /// be made out, the phone's devices are up before that is said.
 #[cfg(target_os = "android")]
 fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Found>) -> Result<()> {
+    // The driver's own filesystem holds the nodes the hardware services
+    // are reached by, and the phone's init may have mounted it only to
+    // reset the data partition.
+    skyward_binder::driver::mount().context("mount the binder driver's filesystem")?;
+    // The recovery's init leaves the service directory stopped; the
+    // phone's own programs register with it, and the directory has to be
+    // told what they are before they start.
+    if crate::services::running("/system/bin/servicemanager").is_none() {
+        skyward_sys::set_prop("ctl.start", "servicemanager").context("start the service directory")?;
+        skyward_sys::wait_prop("init.svc.servicemanager", "running", std::time::Duration::from_secs(5))
+            .context("wait for the service directory")?;
+    }
     let nodes = skyward_sys::ueventd::apply()?;
     skyward_sys::kmsg(&format!("{nodes} device nodes given the owner their phone describes"))?;
     let props = skyward_info::installed_props(slot)?;
