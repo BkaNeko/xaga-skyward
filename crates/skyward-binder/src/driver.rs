@@ -88,26 +88,30 @@ impl Waiting {
 /// the programs reach the drivers by are made inside it. A filesystem
 /// already mounted is left as it is.
 pub fn mount() -> Result<()> {
-    if Path::new(DEVICE).exists() {
-        return Ok(());
-    }
     std::fs::create_dir_all(BINDERFS).with_context(|| format!("make {BINDERFS}"))?;
-    let c = |text: &str| CString::new(text).expect("a path has no nul in it");
-    let mounted = unsafe { libc::mount(c("binder").as_ptr(), c(BINDERFS).as_ptr(), c("binder").as_ptr(), 0, c("stats=global").as_ptr().cast()) };
-    if mounted != 0 {
-        let e = std::io::Error::last_os_error();
-        if e.raw_os_error() != Some(libc::EBUSY) {
-            return Err(e).with_context(|| format!("mount binderfs on {BINDERFS}"));
+    // The driver's filesystem holds the node the system binder is reached
+    // by; its being there says it is already mounted, and mounting on top
+    // of it would give the programs that use it different drivers.
+    let node = Path::new(BINDERFS).join("binder");
+    if !node.exists() {
+        let c = |text: &str| CString::new(text).expect("a path has no nul in it");
+        let mounted = unsafe { libc::mount(c("binder").as_ptr(), c(BINDERFS).as_ptr(), c("binder").as_ptr(), 0, c("stats=global").as_ptr().cast()) };
+        if mounted != 0 {
+            let e = std::io::Error::last_os_error();
+            if e.raw_os_error() != Some(libc::EBUSY) {
+                return Err(e).with_context(|| format!("mount binderfs on {BINDERFS}"));
+            }
         }
     }
     for name in ["binder", "hwbinder", "vndbinder"] {
         let node = format!("{BINDERFS}/{name}");
         let target = format!("/dev/{name}");
+        // The system binder node may be the recovery's own static one.
+        // The hardware and vendor drivers have no other node, so they are
+        // pointed at the filesystem's.
         if !Path::new(&target).exists() {
             std::os::unix::fs::symlink(&node, &target).with_context(|| format!("point {target} at {node}"))?;
         }
-        // The programs that reach the drivers run as the users their init
-        // scripts name, not root alone.
         let _ = std::fs::set_permissions(&node, std::os::unix::fs::PermissionsExt::from_mode(0o666));
     }
     ensure!(Path::new(DEVICE).exists(), "no binder driver at {DEVICE}");
