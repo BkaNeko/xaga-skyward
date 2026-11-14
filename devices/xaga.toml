@@ -173,6 +173,20 @@ group = "drmrpc"
 mode = 0o666
 paths = ["/dev/isee_tee0"]
 
+# The UFS RPMB well-known unit, through which teei_daemon (running as
+# system) serves the secure world's RPMB storage; the phone's own
+# microtrust.rc hands it over on fs, before it starts teei_daemon. Left to
+# root, the secure storage cannot open RPMB, the gatekeeper TA comes up
+# without what it keeps there, and it refuses every credential the
+# installed system enrolled (their handles carry the secure-throttling
+# flag). It has to be in place before teei_daemon starts: the TA reads RPMB
+# only when it loads, so handing it over later changes nothing.
+[[owners]]
+user = "system"
+group = "system"
+mode = 0o660
+paths = ["/dev/0:0:0:49476", "/dev/rpmb0"]
+
 [backup]
 # The baseband's and the sensors' settings, with the phone's own identity;
 # MediaTek keeps them in its own partitions.
