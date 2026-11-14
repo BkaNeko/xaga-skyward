@@ -95,7 +95,9 @@ pub struct Stock {
     pub version: String,
     /// Where the package is downloaded from, over HTTPS.
     pub package: String,
-    /// The recovery partition's SHA-256, in lowercase hex.
+    /// The SHA-256 of the image the recovery is made on, in lowercase hex:
+    /// a recovery partition's own, or the vendor boot image's where the
+    /// recovery lives there.
     pub recovery: String,
 }
 
