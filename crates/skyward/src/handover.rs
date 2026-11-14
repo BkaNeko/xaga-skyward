@@ -25,6 +25,17 @@ pub struct Given {
     pub missing: Vec<String>,
 }
 
+/// Wait until the kernel has made every node the runs name, or `timeout`
+/// has passed: a driver makes its nodes a moment after its module is in,
+/// and what opens them cannot until they are there.
+pub fn wait_for_nodes(runs: &[Owners], timeout: Duration) {
+    let all = |runs: &[Owners]| runs.iter().flat_map(|run| &run.paths).all(|path| Path::new(path).exists());
+    let until = Instant::now() + timeout;
+    while !all(runs) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Give each of the phone's own files the account and mode its init gives
 /// it, as its chown and chmod lines do. One the modules just loaded make may
 /// be there a while after the load returns, and is waited for. A file the

@@ -80,6 +80,13 @@ enum Cmd {
         config: String,
         names: Vec<String>,
     },
+    /// Bring the phone's WLAN up as the WLAN page's switch does, scan for
+    /// networks and say what came up.
+    #[cfg(target_os = "android")]
+    Wlan {
+        #[arg(long, default_value = "/skyward/device.toml")]
+        config: String,
+    },
     /// Run as the recovery service (what init starts as /system/bin/recovery).
     Recovery,
     /// Reboot through init: system, recovery, fastboot, bootloader, edl, or
@@ -247,6 +254,17 @@ fn main() -> Result<()> {
             for path in load_modules(&cfg, &names)? {
                 println!("{}", path.display());
             }
+            Ok(())
+        }
+        #[cfg(target_os = "android")]
+        Cmd::Wlan { config } => {
+            let cfg = DeviceConfig::load(&config)?;
+            let wlan = cfg.wlan.as_ref().with_context(|| format!("{config} describes no WLAN"))?;
+            let dirs = cfg.modules.sources.iter().map(|s| skyward_modules::source_dir(s)).collect::<Result<Vec<_>>>()?;
+            wlan::bring_up_and_scan(wlan, &dirs)?;
+            let mac = skyward_net::iface::hardware_address(&wlan.interface)?;
+            let mac = mac.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":");
+            println!("{} is up, at {mac}", wlan.interface);
             Ok(())
         }
         Cmd::Recovery => recovery(),
