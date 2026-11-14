@@ -29,9 +29,16 @@ pub struct Encryption {
 
 impl Encryption {
     /// Read what an entry of the phone's own table says, which is nothing
-    /// where the entry does not have the partition encrypted whole.
+    /// where the entry does not have the partition encrypted whole. Some
+    /// phones keep the whole partition's key in the metadata directory
+    /// without repeating the cipher in the table; the key directory they do
+    /// name says the partition is encrypted whole.
     pub fn of(entry: &Entry) -> Result<Option<Encryption>> {
-        let Some(said) = entry.extra("metadata_encryption") else { return Ok(None) };
+        let said = match entry.extra("metadata_encryption") {
+            Some(said) => said,
+            None if entry.extra("keydirectory").is_some() => "aes-256-xts",
+            None => return Ok(None),
+        };
         let (name, rest) = said.split_once(':').unwrap_or((said, ""));
         let cipher = CIPHERS
             .iter()
@@ -146,7 +153,7 @@ mod tests {
         assert_eq!(encryption, Encryption { cipher: "aes-xts-plain64".into(), wrapped: true });
         assert!(files(&stock));
 
-        let turned = [entry(STOCK[1]), entry(STOCK[0])];
+        let turned = [entry("latemount,wait,quota"), entry(STOCK[0])];
         assert_eq!(whole(&turned).unwrap().expect("encrypted whole").0, &turned[1], "whichever entry says so");
         assert!(files(&turned));
 
@@ -157,6 +164,17 @@ mod tests {
         let plain = [entry(PLAIN), entry("latemount,wait")];
         assert_eq!(whole(&plain).unwrap(), None);
         assert!(!files(&plain));
+    }
+
+    #[test]
+    fn a_key_directory_without_a_cipher_says_the_partition_is_encrypted_whole() {
+        // The Redmi Note 11T Pro's own table, which keeps the key in the
+        // metadata directory and does not repeat which cipher it is: the
+        // directory it names is the one only a whole encryption has.
+        let only = [entry(STOCK[1])];
+        let (said_in, encryption) = whole(&only).unwrap().expect("encrypted whole");
+        assert_eq!(said_in, &only[0]);
+        assert_eq!(encryption, Encryption { cipher: "aes-xts-plain64".into(), wrapped: false });
     }
 
     #[test]

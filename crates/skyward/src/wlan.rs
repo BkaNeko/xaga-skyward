@@ -631,6 +631,11 @@ fn bring_up(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for path in skyward_modules::load(modules, &cfg.modules)? {
             skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
         }
+        // The connectivity driver's nodes come up root-only; the phone's
+        // assistant runs as the wifi account and writes them.
+        for node in ["/dev/wmtWifi", "/dev/conninfra_dev"] {
+            let _ = fs::set_permissions(node, fs::Permissions::from_mode(0o666));
+        }
         for w in &cfg.writes {
             fs::write(&w.path, &w.value).with_context(|| format!("write {} to {}", w.value, w.path))?;
         }
