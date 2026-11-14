@@ -16,6 +16,8 @@ mod filework;
 #[cfg(target_os = "android")]
 mod handover;
 #[cfg(target_os = "android")]
+mod logd;
+#[cfg(target_os = "android")]
 mod haptics;
 #[cfg(target_os = "android")]
 mod input;
@@ -652,10 +654,6 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
 #[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
 
-/// How long logd may take to say it is ready once started.
-#[cfg(target_os = "android")]
-const LOGD_READY: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// Give the recovery's own logd the libraries of the installed system it
 /// loads, and start it at once rather than on init's next try, so that it
 /// keeps what the phone's own programs log from their start. Each library
@@ -663,14 +661,28 @@ const LOGD_READY: std::time::Duration = std::time::Duration::from_secs(5);
 /// renamed into place, so a logd an earlier run of the recovery service
 /// started keeps the copy it has open.
 #[cfg(target_os = "android")]
-fn start_logd(logd: &skyward_config::Logd) -> Result<()> {
-    for library in &logd.libraries {
+fn start_logd(wanted: &skyward_config::Logd) -> Result<()> {
+    for library in &wanted.libraries {
         services::place(Path::new(library), Path::new(RECOVERY_LIBRARIES))?;
     }
-    skyward_sys::set_prop("ctl.start", "logd")?;
-    skyward_sys::wait_prop("logd.ready", "true", LOGD_READY)?;
-    skyward_sys::kmsg(&format!("logd runs with {} libraries of the installed system", logd.libraries.len()))
+    // The phone's own recovery starts logd itself as it boots, as the logd
+    // account, and the daemon sets its own scheduling cgroup as it starts,
+    // which only root may write. Where that one is not up by the time this
+    // runs, the daemon is started here instead, on sockets made the way
+    // init makes them.
+    if skyward_sys::prop("logd.ready").as_deref() == Some("true") {
+        return skyward_sys::kmsg(&format!("logd runs with {} libraries of the installed system", wanted.libraries.len()));
+    }
+    let _ = skyward_sys::set_prop("ctl.stop", "logd");
+    let started = logd::Logd::start()?;
+    *LOGD_RUNNING.lock().expect("the log daemon is not held by a thread that panicked") = Some(started);
+    skyward_sys::kmsg(&format!("logd runs with {} libraries of the installed system, started by Skyward", wanted.libraries.len()))
 }
+
+/// The log daemon where Skyward started it, kept for as long as the
+/// recovery runs.
+#[cfg(target_os = "android")]
+static LOGD_RUNNING: std::sync::Mutex<Option<logd::Logd>> = std::sync::Mutex::new(None);
 
 /// Have the parts of the secure world that keep keys agree on the key they
 /// sign their notes with, where the phone has any that do. Android's key
