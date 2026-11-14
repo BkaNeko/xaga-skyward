@@ -271,6 +271,23 @@ pub struct Device {
     /// System property that carries the vendor OS version.
     #[serde(default = "default_os_version_prop")]
     pub os_version_prop: String,
+    /// The partition this recovery lives in: `recovery` on phones that keep
+    /// one, `vendor_boot` on phones whose recovery rides in the vendor boot
+    /// image, as MediaTek phones without a recovery partition do.
+    #[serde(default = "default_recovery_partition")]
+    pub recovery_partition: String,
+    /// Whether publishing the phone's service descriptions has the service
+    /// directory started again to read them, as the 13 Ultra's recovery
+    /// needs. A phone whose recovery never runs that directory starts it
+    /// once, and starting it again would take its services away.
+    #[serde(default = "default_true")]
+    pub restart_service_directory: bool,
+    /// Libraries of the installed system the recovery's own programs load
+    /// and its ramdisk leaves out, such as the binder and VINTF libraries
+    /// the service directory is built against. Each is copied into the
+    /// recovery's library folder before the programs start.
+    #[serde(default)]
+    pub recovery_libraries: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -288,6 +305,9 @@ pub struct Display {
     /// sliding over another rounds its leading corners to it.
     #[serde(default)]
     pub corner_radius: u32,
+    /// Whether the panel is switched to its fastest refresh once it is up.
+    #[serde(default = "default_true")]
+    pub fastest_refresh: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -468,6 +488,10 @@ fn default_os_version_prop() -> String {
     "ro.build.display.id".into()
 }
 
+fn default_recovery_partition() -> String {
+    "recovery".into()
+}
+
 fn default_module_sources() -> Vec<String> {
     vec!["vendor_boot".into(), "vendor_dlkm".into(), "vendor".into()]
 }
@@ -515,6 +539,15 @@ impl DeviceConfig {
         }
         for name in &cfg.partitions.mounted {
             ensure!(!name.is_empty() && !name.contains('/'), "[partitions] mounted: {name} is not a partition's name");
+        }
+        {
+            let name = &cfg.device.recovery_partition;
+            ensure!(!name.is_empty() && !name.contains('/'), "[device] recovery_partition: {name} is not a partition's name");
+        }
+        for library in &cfg.device.recovery_libraries {
+            let path = Path::new(library);
+            let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+            ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[device] recovery_libraries: {library} is not an absolute path to a file");
         }
         for s in cfg.services.iter().filter(|s| s.oneshot) {
             let waits = s.ready_property.is_some() || s.ready_service.is_some() || s.ready_hardware_service.is_some();
@@ -614,6 +647,16 @@ mod tests {
         for command in ramdisk::COMMANDS {
             assert_eq!(folder(command), folder(ramdisk::RECOVERY), "{command}");
         }
+    }
+
+    #[test]
+    fn the_partition_the_recovery_lives_in_is_named_plainly() {
+        let plain = DeviceConfig::parse("[device]\ncodename = \"xaga\"\n").unwrap();
+        assert_eq!(plain.device.recovery_partition, "recovery", "a phone with a recovery partition of its own");
+        let vendor = DeviceConfig::parse("[device]\ncodename = \"xaga\"\nrecovery_partition = \"vendor_boot\"\n").unwrap();
+        assert_eq!(vendor.device.recovery_partition, "vendor_boot");
+        assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\nrecovery_partition = \"by-name/vendor_boot\"\n").is_err());
+        assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\nrecovery_partition = \"\"\n").is_err());
     }
 
     #[test]
