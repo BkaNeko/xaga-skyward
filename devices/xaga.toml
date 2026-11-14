@@ -92,6 +92,12 @@ version = "OS1.0.3.0.ULOCNXM"
 package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS1.0.3.0.ULOCNXM/miui_XAGA_OS1.0.3.0.ULOCNXM_ddae354606_14.0.zip"
 recovery = "fed80580d619b916d73b51b704f2af6c9f08afafc84810ced0b2397a0b52797f"
 
+[skyward]
+# Where this build's own releases are published, which its update page asks
+# about a newer one. This fork publishes them itself; the project's own is
+# `kirklin/skyward`, which a phone that names none is asked about.
+releases = "BkaNeko/xaga-skyward"
+
 [update]
 # The phone maker's update server, which the stock updater asks about the
 # installed system: the same one the Chinese build asks.
