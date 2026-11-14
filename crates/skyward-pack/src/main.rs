@@ -161,10 +161,11 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Stock { config, out } => {
-            let stock = skyward_config::DeviceConfig::load(&config)?.stock.with_context(|| format!("{} names no stock build", config.display()))?;
+            let cfg = skyward_config::DeviceConfig::load(&config)?;
+            let stock = cfg.stock.as_ref().with_context(|| format!("{} names no stock build", config.display()))?;
             println!("version={}\npackage={}\nrecovery={}", stock.version, stock.package, stock.recovery);
             match out {
-                Some(out) => take_stock_recovery(&stock, &out),
+                Some(out) => take_stock_recovery(stock, &cfg.device.recovery_partition, &out),
                 None => Ok(()),
             }
         }
@@ -176,19 +177,18 @@ fn main() -> Result<()> {
     }
 }
 
-/// The partition a recovery is made on, as a full update package names it.
-const RECOVERY: &str = "recovery";
-
-/// Take the recovery partition out of the stock build's full update package
-/// on its server, reading only what that partition takes of it, and write it
-/// to `out` once its SHA-256 is the one the configuration names.
-fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> {
+/// Take the partition the recovery is made on out of the stock build's full
+/// update package on its server, reading only what that partition takes of
+/// it, and write it to `out` once its SHA-256 is the one the configuration
+/// names. A phone whose recovery lives in its vendor boot image names that
+/// partition rather than a recovery one.
+fn take_stock_recovery(stock: &skyward_config::Stock, partition: &str, out: &Path) -> Result<()> {
     let parent = out.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     std::fs::create_dir_all(parent).with_context(|| format!("make {}", parent.display()))?;
     // Taken out beside where it goes, so it is moved there whole.
     let work = tempfile::Builder::new().prefix(".stock").tempdir_in(parent).with_context(|| format!("make a folder in {}", parent.display()))?;
     let payload = unpayload::Payload::open_url(&stock.package).with_context(|| format!("open {}", stock.package))?;
-    let options = unpayload::ExtractOptions { output_dir: work.path().to_path_buf(), partitions: vec![RECOVERY.into()], ..Default::default() };
+    let options = unpayload::ExtractOptions { output_dir: work.path().to_path_buf(), partitions: vec![partition.into()], ..Default::default() };
     let report = |event: unpayload::Event<'_>| match event {
         unpayload::Event::Started { partitions } => {
             for (name, bytes) in partitions {
@@ -198,10 +198,10 @@ fn take_stock_recovery(stock: &skyward_config::Stock, out: &Path) -> Result<()> 
         unpayload::Event::Extracted(image) => println!("took {} out: {} bytes", image.partition, image.size),
         unpayload::Event::Progress { .. } => {}
     };
-    let taken = payload.extract(&options, &report).with_context(|| format!("take {RECOVERY} out of {}", stock.package))?;
-    let image = taken.iter().find(|i| i.partition == RECOVERY).with_context(|| format!("{} holds no {RECOVERY} partition", stock.package))?;
+    let taken = payload.extract(&options, &report).with_context(|| format!("take {partition} out of {}", stock.package))?;
+    let image = taken.iter().find(|i| i.partition == partition).with_context(|| format!("{} holds no {partition} partition", stock.package))?;
     let sum = hex::encode(image.sha256.as_deref().context("the package's own sum of the image was not checked")?);
-    ensure!(sum == stock.recovery, "the {RECOVERY} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
+    ensure!(sum == stock.recovery, "the {partition} partition in {} has the SHA-256 {sum}, where the configuration names {}", stock.package, stock.recovery);
     std::fs::rename(&image.path, out).with_context(|| format!("move {} to {}", image.path.display(), out.display()))?;
     println!("wrote {} ({} bytes), its SHA-256 the one the configuration names", out.display(), image.size);
     Ok(())
