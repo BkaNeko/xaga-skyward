@@ -102,11 +102,14 @@ server = "https://update.miui.com/updates/miotaV3.php"
 # and the sensors' calibration are there.
 mounted = ["persist"]
 
-# logd is left out, as the phone's own recovery leaves it: the ramdisk lacks
-# two of the libraries its logd loads, and with those given it still stops at
-# the cgroup it sets itself under, which a recovery runs as the logd account
-# and cannot write. Skyward's own log goes to the kernel log, which dmesg
-# shows.
+# The recovery carries logd, and the phone's own programs log to it, but two
+# of the libraries it loads are the installed system's, and the daemon its
+# own recovery starts as the logd account stops at the scheduling cgroup it
+# sets itself under, which only root may write. Skyward gives it those
+# libraries and starts it itself where the phone's own start does not come
+# up. Skyward's own log still goes to the kernel log, which dmesg shows.
+[logd]
+libraries = ["/mnt/system/system/lib64/libsysutils.so", "/mnt/system/system/lib64/libcap.so"]
 
 # MediaTek's TrustZone daemon: the key service below opens its session
 # through it.
