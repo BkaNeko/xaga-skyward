@@ -14,6 +14,8 @@ mod decrypt;
 #[cfg(target_os = "android")]
 mod filework;
 #[cfg(target_os = "android")]
+mod handover;
+#[cfg(target_os = "android")]
 mod haptics;
 #[cfg(target_os = "android")]
 mod input;
@@ -558,8 +560,11 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
     }
     if !cfg.owners.is_empty() {
-        let handed = hand_over(&cfg.owners)?;
-        skyward_sys::kmsg(&format!("{handed} of the phone's own files handed to the accounts its init gives them"))?;
+        let given = handover::give(&cfg.owners)?;
+        skyward_sys::kmsg(&format!("{} of the phone's own files handed to the accounts its init gives them", given.handed))?;
+        if !given.missing.is_empty() {
+            skyward_sys::kmsg(&format!("{} of them the kernel made none of this boot: {}", given.missing.len(), given.missing.join(", ")))?;
+        }
     }
     // What the phone describes is known wherever its partitions could be
     // read at all; what they say of its keys may still not be.
@@ -610,38 +615,6 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     }
     keys::start(&steps)?;
     agree_on_the_notes_key(&registering)
-}
-
-/// How long a file handed over may take to be there once the modules are
-/// loaded: a driver makes its files as it takes its device up, and ueventd
-/// makes the device's node once the kernel has told it of the device,
-/// either of which may come after the load of the module returns.
-#[cfg(target_os = "android")]
-const FILES_MADE: std::time::Duration = std::time::Duration::from_secs(5);
-
-/// Give each file the phone's own init hands over as it boots to the
-/// account it names, with the mode it gives, as its chown and chmod lines
-/// do. The files are the ones the modules just loaded make, which the
-/// phone's own programs open as those accounts; one not there yet is
-/// waited for.
-#[cfg(target_os = "android")]
-fn hand_over(owners: &[skyward_config::Owners]) -> Result<usize> {
-    use skyward_sys::ueventd;
-    use std::os::unix::fs::PermissionsExt;
-    let known = ueventd::accounts(&ueventd::PASSWD_FILES.iter().chain(&ueventd::GROUP_FILES).copied().collect::<Vec<_>>());
-    let id = |name: &str| ueventd::account(&known, name).with_context(|| format!("the phone has no account named {name}"));
-    let mut handed = 0;
-    for run in owners {
-        let (uid, gid) = (id(&run.user)?, id(&run.group)?);
-        for path in &run.paths {
-            skyward_sys::wait_file(Path::new(path), FILES_MADE).context("wait for a file the modules just loaded make")?;
-            std::os::unix::fs::chown(path, Some(uid), Some(gid)).with_context(|| format!("give {path} to {}:{}", run.user, run.group))?;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(run.mode))
-                .with_context(|| format!("give {path} the mode {:o}", run.mode))?;
-            handed += 1;
-        }
-    }
-    Ok(handed)
 }
 
 /// The folder the recovery's own programs load their libraries from.
