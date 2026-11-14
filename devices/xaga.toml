@@ -82,14 +82,31 @@ libraries = ["/vendor/lib64/vndk", "/system/lib64", "/vendor/lib64"]
 service = "android.hardware.wifi.supplicant@1.4::ISupplicant/default"
 probe = "http://connect.rom.miui.com/generate_204"
 
+[stock]
+# The Chinese system's first HyperOS build, whose full update package on the
+# phone maker's own server holds the vendor boot image the recovery is made
+# on: the Xiaomi account this phone comes with keeps its vendor partition
+# from that build. The package names it OS1.0.3.0, which is the same build
+# the phone reports as V816.0.3.0.
+version = "OS1.0.3.0.ULOCNXM"
+package = "https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS1.0.3.0.ULOCNXM/miui_XAGA_OS1.0.3.0.ULOCNXM_ddae354606_14.0.zip"
+recovery = "fed80580d619b916d73b51b704f2af6c9f08afafc84810ced0b2397a0b52797f"
+
+[update]
+# The phone maker's update server, which the stock updater asks about the
+# installed system: the same one the Chinese build asks.
+server = "https://update.miui.com/updates/miotaV3.php"
+
 [partitions]
 # The phone mounts persist at /mnt/vendor/persist; the WLAN's MAC address
 # and the sensors' calibration are there.
 mounted = ["persist"]
 
-# logd is left out: this recovery mounts no cgroups, and its logd stops at
-# the cgroup it cannot join. Skyward's own log goes to the kernel log, which
-# dmesg shows.
+# logd is left out, as the phone's own recovery leaves it: the ramdisk lacks
+# two of the libraries its logd loads, and with those given it still stops at
+# the cgroup it sets itself under, which a recovery runs as the logd account
+# and cannot write. Skyward's own log goes to the kernel log, which dmesg
+# shows.
 
 # MediaTek's TrustZone daemon: the key service below opens its session
 # through it.
