@@ -44,6 +44,9 @@ pub mod ramdisk {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceConfig {
     pub device: Device,
+    /// Where this build is published, where it is not the project's own.
+    #[serde(default)]
+    pub skyward: Option<Skyward>,
     #[serde(default)]
     pub display: Display,
     #[serde(default)]
@@ -201,6 +204,14 @@ pub struct Firmware {
     /// still ends bringing the WLAN up.
     #[serde(default)]
     pub optional: bool,
+}
+
+/// Where Skyward's own releases are published, which the recovery asks
+/// about a newer one: an account and a repository, such as the project's
+/// own `kirklin/skyward`. A build of one's own names its repository here.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Skyward {
+    pub releases: String,
 }
 
 /// The phone maker's update server, which the stock updater asks about the
@@ -584,6 +595,13 @@ pub fn codename(text: &str) -> Result<String> {
 }
 
 impl DeviceConfig {
+    /// Where Skyward's own releases are asked about: what the phone names,
+    /// or the project's own repository.
+    pub fn releases(&self) -> &str {
+        const PROJECT: &str = "kirklin/skyward";
+        self.skyward.as_ref().map_or(PROJECT, |skyward| skyward.releases.as_str())
+    }
+
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let p = path.as_ref();
         let text = std::fs::read_to_string(p)
@@ -1091,6 +1109,14 @@ mod tests {
         assert!(!report.uses(Path::new("/vendor")));
         let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
         assert!(nezha.services[0].uses(Path::new("/vendor")), "its shell and its libraries are the vendor partition's");
+    }
+
+    #[test]
+    fn a_build_asks_its_own_releases_where_the_phone_names_them() {
+        let plain = DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap();
+        assert_eq!(plain.releases(), "kirklin/skyward", "the project's own where a phone names none");
+        let own = DeviceConfig::parse("[device]\ncodename = \"x\"\n[skyward]\nreleases = \"BkaNeko/xaga-skyward\"\n").unwrap();
+        assert_eq!(own.releases(), "BkaNeko/xaga-skyward");
     }
 
     #[test]
