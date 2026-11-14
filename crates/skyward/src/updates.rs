@@ -41,7 +41,7 @@ pub enum Task {
     /// Ask GitHub for Skyward's newest release and its zip for the phone
     /// `codename` names; where that fails, `probe` says whether the network
     /// is why.
-    CheckSkyward { probe: String, codename: String },
+    CheckSkyward { probe: String, codename: String, releases: String },
     /// Download `build` to `path`, check that its image is Skyward for the
     /// phone `codename` names, and write the image into the recovery
     /// partitions of the slot that starts next and of any other slot that
@@ -135,10 +135,11 @@ impl Worker {
                     let end = fetch(&servers, release.urls.clone(), &sum, &release.name, &path, &stopping, &using, &tell, &mut refused);
                     tell(Event::Ended(end));
                 }
-                Task::CheckSkyward { probe, codename } => {
+                Task::CheckSkyward { probe, codename, releases } => {
                     let a = http::agent(servers.clone());
                     *using.lock().expect("the agent is not held by a thread that panicked") = Some(a.clone());
-                    let answer = github::ask(&a, &codename, skyward_info::VERSION).map_err(|e| unanswered(&e, github::LATEST, &probe, &servers));
+                    let answer = github::ask(&a, &releases, &codename, skyward_info::VERSION)
+                        .map_err(|e| unanswered(&e, &github::latest(&releases), &probe, &servers));
                     tell(Event::SkywardChecked(answer));
                 }
                 // GitHub's API hands the zip out at a short-lived address
