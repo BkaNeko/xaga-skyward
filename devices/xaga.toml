@@ -52,10 +52,34 @@ strength = { lightest = 0.25, strongest = 1.0 }
 # modules.dep load first. The driver's firmware is already in the vendor
 # partition's firmware folder, which the kernel is pointed at.
 modules = ["wlan_drv_gen4m_6895"]
+# The nodes the connectivity driver makes as it loads, as the phone's own
+# init gives them: conninfra_loader runs as system and wlan_assistant as
+# wifi, and neither can open the nodes a recovery's ueventd leaves root's.
+nodes = [
+    { user = "wifi", group = "wifi", mode = 0o660, paths = ["/dev/wmtWifi"] },
+    { user = "system", group = "system", mode = 0o660, paths = ["/dev/conninfra_dev"] },
+]
+# The chip's settings: wlan_assistant reads them from the nvdata partition's
+# APCFG/APRDEB/WIFI, which a recovery does not keep mounted.
+mounts = [{ partition = "nvdata", at = "/mnt/vendor/nvdata" }]
+# Once the driver's node is there, wlan_assistant writes those settings to
+# it and says so. They are only read as the chip starts, so the switch-on
+# waits for this rather than leaving the driver its own default address.
+settings = { property = "vendor.mtk.nvram.ready", value = "1" }
+# Switching the chip on is what starts it. The first write of a boot is
+# answered with an error while the connectivity part runs its calibration,
+# which takes tens of seconds, though the chip goes on starting meanwhile;
+# the interface appears once it is through, so the write is made again.
+writes = [{ path = "/dev/wmtWifi", value = "1" }]
+attempts = 5
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"
 libraries = ["/vendor/lib64/vndk", "/system/lib64", "/vendor/lib64"]
-service = "android.hardware.wifi.supplicant.ISupplicant/default"
+# The supplicant registers with the directory for hardware services, at the
+# version the phone's own description names for it. Described as a service
+# of the newer kind, it would be turned away, and a program that registers
+# with the directory ends when one of its names is.
+service = "android.hardware.wifi.supplicant@1.4::ISupplicant/default"
 probe = "http://connect.rom.miui.com/generate_204"
 
 [partitions]
@@ -138,9 +162,11 @@ user = "root"
 groups = ["root"]
 ready_hardware_service = "android.hardware.boot@1.2::IBootControl/default"
 
-# MediaTek's connectivity bring-up: the loader waits for the WLAN modules
-# and then tells the phone they are ready; the assistant writes the
-# chip's NVRAM and MAC address to the driver as it comes up.
+# MediaTek's connectivity bring-up: the loader opens the connectivity
+# driver's node and asks it to set the chip's part of the firmware up, then
+# tells the phone it is ready; the assistant waits for the WLAN driver's
+# node and writes the chip's settings to it. Both are started at boot and
+# wait, so the WLAN's own bring-up is what opens their nodes to them.
 [[service]]
 path = "/vendor/bin/conninfra_loader"
 libraries = ["/system/lib64", "/vendor/lib64"]
@@ -195,7 +221,7 @@ efs = ["nvdata", "nvcfg", "protect1", "protect2", "persist"]
 [wipe]
 logs = ["/data/vendor/mtklog", "/data/vendor/connsyslog"]
 
-# WLAN is not brought up yet: MediaTek's driver is loaded from vendor_dlkm
-# only after conninfra_loader has loaded the connectivity firmware and
-# wlan_assistant runs, and this configuration starts neither. Everything
-# that does not need a network works without it.
+# WLAN comes up through the phone's own programs: conninfra_loader and
+# wlan_assistant, started at boot, and the driver switched on by the [wlan]
+# write above. What they need from the installed system is its nvdata
+# partition, which the [wlan] mount provides.

@@ -106,10 +106,31 @@ pub struct Stock {
 pub struct Wlan {
     /// The driver's kernel modules; what they depend on loads first.
     pub modules: Vec<String>,
+    /// The nodes the drivers make as they load, and the accounts the
+    /// phone's own programs open them under. A recovery's ueventd makes
+    /// them root's alone, and hands nothing over.
+    #[serde(default)]
+    pub nodes: Vec<Owners>,
+    /// Partitions the chip's own programs read as the driver comes up, which
+    /// a recovery does not keep mounted otherwise. They are mounted
+    /// read-only, and only where nothing is mounted already.
+    #[serde(default)]
+    pub mounts: Vec<Mount>,
+    /// The property the phone's own assistant sets once it has written the
+    /// chip's settings, which it does a moment after the driver's node is
+    /// there. The switch-on waits for it, for a while.
+    #[serde(default)]
+    pub settings: Option<Property>,
     /// What is written once they are in, each value to its file, such as
     /// what tells a platform driver it may start the chip.
     #[serde(default)]
     pub writes: Vec<Write>,
+    /// How many times the writes are made before the interface is given up
+    /// on. A chip whose connectivity part has only just been started
+    /// calibrates as it is first switched on, which the write is answered
+    /// with an error for, though the chip goes on starting.
+    #[serde(default = "one_try")]
+    pub attempts: u32,
     /// Files the driver asks the kernel's firmware loader for that are not
     /// where the loader looks in a recovery.
     #[serde(default)]
@@ -136,6 +157,16 @@ pub struct Wlan {
 pub struct Write {
     pub path: String,
     pub value: String,
+}
+
+/// A partition mounted read-only for the WLAN's own programs, at the folder
+/// the phone's table mounts it at.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Mount {
+    /// The partition's name, without the slot it is of.
+    pub partition: String,
+    /// The folder the phone's own table mounts it at.
+    pub at: String,
 }
 
 /// The partition holding the firmware images of a phone's processors and
@@ -235,9 +266,10 @@ pub struct Logd {
     pub libraries: Vec<String>,
 }
 
-/// Files the phone's own init hands to one account as it boots, each given
-/// the same mode, as a run of its chown and chmod lines does: device nodes,
-/// and the kernel's switches that the phone's own programs open.
+/// Files the phone's own init hands to one account, each given the same
+/// mode, as a run of its chown and chmod lines does: device nodes, and the
+/// kernel's switches that the phone's own programs open. Its init hands
+/// its own over as it boots; a driver's are handed over as they are made.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Owners {
     pub user: String,
@@ -453,6 +485,24 @@ const CAPABILITIES: [&str; 41] = [
     "CHECKPOINT_RESTORE",
 ];
 
+/// Check a run of the phone's own files given to an account, as any
+/// section that names one writes them.
+fn check_given(what: &str, runs: &[Owners]) -> Result<()> {
+    for run in runs {
+        for name in [&run.user, &run.group] {
+            ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "{what}: {name:?} is not an account's name");
+        }
+        ensure!(run.mode <= 0o7777, "{what}: mode {:o} is not a file's mode", run.mode);
+        ensure!(!run.paths.is_empty(), "{what}: the run for {}:{} names no file", run.user, run.group);
+        for file in &run.paths {
+            let path = Path::new(file);
+            let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
+            ensure!(path.is_absolute() && plain && path.file_name().is_some(), "{what}: {file} is not an absolute path");
+        }
+    }
+    Ok(())
+}
+
 /// The kernel's number for a capability, by the name init's capabilities
 /// line gives it.
 pub fn capability(name: &str) -> Option<u32> {
@@ -482,6 +532,12 @@ impl Service {
 
 fn default_true() -> bool {
     true
+}
+
+/// One try at the writes, which is what a phone whose chip needs nothing
+/// more than them gets.
+fn one_try() -> u32 {
+    1
 }
 
 fn default_os_version_prop() -> String {
@@ -587,18 +643,7 @@ impl DeviceConfig {
                 ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[logd] libraries: {library} is not an absolute path to a file");
             }
         }
-        for owners in &cfg.owners {
-            for name in [&owners.user, &owners.group] {
-                ensure!(!name.is_empty() && !name.contains(char::is_whitespace), "[[owners]] {name:?} is not an account's name");
-            }
-            ensure!(owners.mode <= 0o7777, "[[owners]] mode {:o} is not a file's mode", owners.mode);
-            ensure!(!owners.paths.is_empty(), "[[owners]] for {}:{} names no file", owners.user, owners.group);
-            for file in &owners.paths {
-                let path = Path::new(file);
-                let plain = path.components().all(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Normal(_)));
-                ensure!(path.is_absolute() && plain && path.file_name().is_some(), "[[owners]] paths: {file} is not an absolute path to a file");
-            }
-        }
+        check_given("[[owners]]", &cfg.owners)?;
         if let Some(stock) = &cfg.stock {
             let name = stock.package.rsplit('/').next().unwrap_or_default();
             ensure!(
@@ -615,6 +660,20 @@ impl DeviceConfig {
         }
         if let Some(wlan) = &cfg.wlan {
             ensure!(wlan.probe.starts_with("http://"), "[wlan] probe: {} is not a plain HTTP address", wlan.probe);
+            ensure!(wlan.attempts >= 1, "[wlan] attempts: {} is not a number of tries", wlan.attempts);
+            check_given("[wlan] nodes", &wlan.nodes)?;
+            for mount in &wlan.mounts {
+                ensure!(!mount.partition.is_empty() && !mount.partition.contains('/'), "[wlan] mounts: {} is not a partition's name", mount.partition);
+                let at = Path::new(&mount.at);
+                ensure!(at.is_absolute() && at.file_name().is_some(), "[wlan] mounts: {} is not an absolute path to mount at", mount.at);
+            }
+            if let Some(settings) = &wlan.settings {
+                ensure!(
+                    !settings.property.is_empty() && !settings.property.contains(char::is_whitespace),
+                    "[wlan] settings: {:?} is not a property's name",
+                    settings.property
+                );
+            }
             for file in &wlan.firmware {
                 let name = Path::new(&file.name);
                 let plain = name.components().all(|c| matches!(c, std::path::Component::Normal(_)));
@@ -990,5 +1049,34 @@ mod tests {
         assert!(!report.uses(Path::new("/vendor")));
         let nezha = DeviceConfig::parse(include_str!("../../../devices/nezha.toml")).unwrap();
         assert!(nezha.services[0].uses(Path::new("/vendor")), "its shell and its libraries are the vendor partition's");
+    }
+
+    #[test]
+    fn xaga_waits_for_its_chips_settings_and_switches_it_on_more_than_once() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/xaga.toml")).unwrap();
+        let wlan = cfg.wlan.expect("xaga brings its WLAN up");
+        assert_eq!(wlan.mounts, [Mount { partition: "nvdata".into(), at: "/mnt/vendor/nvdata".into() }]);
+        assert_eq!(wlan.settings, Some(Property { property: "vendor.mtk.nvram.ready".into(), value: "1".into() }));
+        assert_eq!(
+            wlan.nodes,
+            [
+                Owners { user: "wifi".into(), group: "wifi".into(), mode: 0o660, paths: vec!["/dev/wmtWifi".into()] },
+                Owners { user: "system".into(), group: "system".into(), mode: 0o660, paths: vec!["/dev/conninfra_dev".into()] },
+            ]
+        );
+        assert_eq!(wlan.writes, [Write { path: "/dev/wmtWifi".into(), value: "1".into() }]);
+        assert_eq!(wlan.attempts, 5, "the first switch-on is answered with an error while the chip's calibration runs");
+    }
+
+    #[test]
+    fn a_phone_that_says_nothing_of_them_is_switched_on_once_and_mounts_nothing() {
+        let base = "[device]\ncodename = \"x\"\n[wlan]\nmodules = []\ninterface = \"wlan0\"\n\
+                    supplicant = \"/vendor/bin/hw/wpa_supplicant\"\nservice = \"s\"\nprobe = \"http://x/generate_204\"\n";
+        let cfg = DeviceConfig::parse(base).unwrap();
+        let wlan = cfg.wlan.expect("the WLAN is described");
+        assert_eq!(wlan.attempts, 1);
+        assert!(wlan.mounts.is_empty());
+        assert!(wlan.nodes.is_empty());
+        assert_eq!(wlan.settings, None);
     }
 }
