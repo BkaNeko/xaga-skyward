@@ -1733,6 +1733,8 @@ pub enum Caption {
     Sun,
     /// A phone between the lines of its shaking.
     Vibrate,
+    /// A padlock, as the lock screen shows it.
+    Lock,
 }
 
 /// Card with a monochrome icon caption, a slider, and an optional row below.
@@ -1773,6 +1775,7 @@ pub fn slider_card(c: &mut Canvas, t: &Theme, f: &Fonts, top: f32, caption: Capt
                 }
             }
         }
+        Caption::Lock => icons::glyph(c, Icon::Lock, scx, lcy, m.dp(19.0), t.pal.mono_icon),
     }
     // The caption is set like the account name, in the softer text colour.
     c.text_vc(&f.heading, label, card_x + m.dp(53.7), lcy, m.account_title_px, t.pal.info, None);

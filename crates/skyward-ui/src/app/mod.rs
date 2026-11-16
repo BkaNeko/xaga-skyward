@@ -43,6 +43,7 @@ mod frame;
 mod input;
 mod install;
 mod keys;
+mod lock;
 mod manager;
 mod mount;
 mod nav;
@@ -1190,6 +1191,14 @@ pub struct App {
     /// How round the screen's corners are, in pixels.
     corners: f32,
     dirty: bool,
+    /// The screen is locked until a swipe up lets the pages show again.
+    locked: bool,
+    /// What the lock screen shows behind it, blurred when the screen went
+    /// off; none until it first does.
+    lock_bg: Option<Canvas>,
+    /// Where a finger swiping up on the lock screen started and has come
+    /// to, for the hint to follow it.
+    lock_drag: Option<(f32, f32)>,
     w: u32,
     h: u32,
     px_per_dp: f32,
@@ -1256,6 +1265,9 @@ impl App {
             backdrop: None,
             corners: 0.0,
             dirty: true,
+            locked: false,
+            lock_bg: None,
+            lock_drag: None,
             w,
             h,
             px_per_dp,

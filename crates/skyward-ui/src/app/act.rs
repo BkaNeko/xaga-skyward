@@ -51,6 +51,7 @@ impl App {
             Action::Toggle(switch) => {
                 let on = match switch {
                     Switch::Vibrate => &mut self.state.vibrate,
+                    Switch::LockScreen => &mut self.state.lock_screen,
                     Switch::FileTransfer => &mut self.state.file_transfer,
                     Switch::Compress => &mut self.state.compress,
                     Switch::Verify => &mut self.state.verify,
@@ -62,6 +63,9 @@ impl App {
                 *on = !*on;
                 let now_on = *on;
                 self.refresh();
+                if switch == Switch::LockScreen && !now_on {
+                    self.unlock_screen();
+                }
                 if switch == Switch::FileTransfer {
                     return vec![Effect::FileTransfer(now_on)];
                 }

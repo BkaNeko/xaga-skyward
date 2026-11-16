@@ -398,7 +398,29 @@ pub fn settings(cx: &Ctx) -> Frame {
     if let Some(r) = vibration.below {
         out.push(Hit { rect: r, action: Action::Toggle(Switch::Vibrate) });
     }
-    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["通用", "一般", "General"]));
+    y = widgets::section(&mut c, t, f, vibration.bottom, l.pick(["锁屏", "鎖定畫面", "Lock screen"]));
+    let below = Row::new(l.pick(["息屏后锁屏", "關閉螢幕後鎖定", "Lock when the screen turns off"])).trail(Trail::Switch(s.lock_screen));
+    let lock = widgets::slider_card(
+        &mut c,
+        t,
+        f,
+        y,
+        Caption::Lock,
+        l.pick(["背景模糊", "背景模糊", "Background blur"]),
+        s.lock_blur,
+        Some(below),
+    );
+    out.push(Hit { rect: lock.track, action: Action::Slider(Slider::LockBlur) });
+    if let Some(r) = lock.below {
+        out.push(Hit { rect: r, action: Action::Toggle(Switch::LockScreen) });
+    }
+    let note = l.pick([
+        "滑动解锁只用于防止误触，不是安全锁。",
+        "滑動解鎖只用於防止誤觸，不是安全鎖。",
+        "The swipe lock keeps stray touches out; it is not a security lock.",
+    ]);
+    y = widgets::footnote(&mut c, t, f, lock.bottom, note);
+    y = widgets::section(&mut c, t, f, y, l.pick(["通用", "一般", "General"]));
     let general = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(LANGUAGE)).icon(BLUE, Icon::Globe).trail(Trail::Value(l.name())),
         Row::new(l.pick(TIME_ZONE)).icon(ORANGE, Icon::Clock).trail(Trail::Value(l.pick(TIME_ZONES[s.time_zone].0))),

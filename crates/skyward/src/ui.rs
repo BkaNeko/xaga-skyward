@@ -1644,6 +1644,9 @@ impl<'a> Pages<'a> {
     /// What time passing asks for: the motor's clicks and ticks, and the
     /// status bar's clock drawn again as its minute turns.
     fn tick(&mut self, now: u64) -> Result<()> {
+        if !self.app.state.lock_screen && self.app.is_locked() {
+            self.app.unlock_screen();
+        }
         for fx in self.app.tick(now) {
             match fx {
                 Effect::Haptic => self.click()?,
@@ -1717,6 +1720,18 @@ impl<'a> Pages<'a> {
     /// rest it or turn it off as the page asks. Gives whether the panel is
     /// lit, and whether a frame was shown.
     fn show(&mut self, now: u64) -> Result<(bool, bool)> {
+        // The screen going off keeps what it showed for the lock screen,
+        // blurred before the panel's frame is blacked out. This is done as
+        // the darkening starts, while the frame still holds the page.
+        if !self.app.display_on()
+            && self.app.state.lock_screen
+            && !self.app.is_locked()
+            && !self.blanked
+            && !self.fastboot
+            && self.inputs.has_panel()
+        {
+            self.app.lock_with_snapshot(&self.screen);
+        }
         let panel = self.app.panel(now);
         let mut shown = false;
         if panel.is_some() {
@@ -1775,7 +1790,7 @@ impl<'a> Pages<'a> {
     fn wait(&mut self, sleeper: &Sleeper, uevents: &uevent::Listener, now: u64, lit: bool, shown: bool) -> Result<()> {
         // A page at rest draws the rows it has yet to while nothing else
         // is to be done, a band at a time, looking for input between bands.
-        let ahead = lit && !shown && self.app.draw_ahead(&self.fonts, &self.info);
+        let ahead = lit && !shown && !self.app.is_locked() && self.app.draw_ahead(&self.fonts, &self.info);
         // A frame shown has waited for the one before it to reach the
         // panel, which keeps the loop to the panel's pace; otherwise the CPU
         // gets at least a millisecond.

@@ -13,6 +13,12 @@ pub struct State {
     pub language_chosen: bool,
     pub dark: bool,
     pub brightness: f32,
+    /// The screen locks when it goes off, and a swipe up lets the pages
+    /// show again.
+    pub lock_screen: bool,
+    /// How strongly the lock screen's background is blurred, from 0 at the
+    /// slider's left end to 1 at its right.
+    pub lock_blur: f32,
     /// How long the screen stays on with nothing touched, by its place in
     /// [`SCREEN_OFF`].
     pub screen_off: usize,
@@ -196,6 +202,8 @@ impl Default for State {
             language_chosen: false,
             dark: false,
             brightness: SLIDER_START,
+            lock_screen: true,
+            lock_blur: 0.5,
             // Two minutes.
             screen_off: 3,
             time_zone: 0,
