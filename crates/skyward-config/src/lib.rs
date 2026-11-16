@@ -15,6 +15,9 @@ pub mod ramdisk {
     /// The monospaced typeface's licence, which travels with every copy of
     /// it.
     pub const MONO_LICENSE: &str = "skyward/KirkMono-OFL.txt";
+    /// The photo of the phone itself, shown on the home page, where the
+    /// build carries one: `devices/<codename>.png` beside the configuration.
+    pub const PORTRAIT: &str = "skyward/portrait.png";
     /// The recovery service binary init starts.
     pub const RECOVERY: &str = "system/bin/recovery";
     /// The first program of a system installed beside the installed one,
