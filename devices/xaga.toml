@@ -5,6 +5,8 @@ brand = "Redmi"
 # Redmi K50i; the phone itself calls all of them xaga.
 model = "Redmi Note 11T Pro"
 ab = true
+# MediaTek's BROM is not an EDL the running system can enter.
+edl = false
 soc = { hans = "天玑 8100", hant = "天璣 8100", en = "Dimensity 8100" }
 os_version_prop = "ro.mi.os.version.incremental"
 # The recovery this is built on lives in the vendor_boot partition, as it

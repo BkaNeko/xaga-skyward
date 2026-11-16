@@ -701,7 +701,14 @@ impl App {
     pub(super) fn confirmed(&mut self, which: Confirm, now: u64) -> Vec<Effect> {
         let (l, mut fx) = (self.state.lang, Vec::new());
         match which {
-            Confirm::Reboot => fx.push(Effect::Reboot(TARGETS[self.state.reboot])),
+            Confirm::Reboot => {
+                let target = TARGETS[self.state.reboot];
+                if target == Target::Edl && !self.state.edl {
+                    self.say(l.pick(["本机没有 EDL 模式", "本機沒有 EDL 模式", "This phone has no EDL mode"]), now);
+                } else {
+                    fx.push(Effect::Reboot(target));
+                }
+            }
             Confirm::Wipe => {
                 let chosen: Vec<Wipe> = WIPES.iter().zip(self.state.wipe).filter(|(_, on)| *on).map(|(&w, _)| w).collect();
                 match chosen.is_empty() {

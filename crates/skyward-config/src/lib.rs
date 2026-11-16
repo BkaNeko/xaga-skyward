@@ -310,6 +310,10 @@ pub struct Device {
     pub model: String,
     #[serde(default = "default_true")]
     pub ab: bool,
+    /// Whether the phone has Qualcomm's EDL mode to reboot into; MediaTek
+    /// phones have BROM instead, which the running system cannot enter.
+    #[serde(default = "default_true")]
+    pub edl: bool,
     /// SoC marketing name shown on the About page.
     #[serde(default)]
     pub soc: Option<Names>,
@@ -739,10 +743,17 @@ mod tests {
     }
 
     #[test]
+    fn a_mediatek_phone_is_not_offered_an_edl_it_has_not() {
+        let cfg = DeviceConfig::parse(include_str!("../../../devices/xaga.toml")).unwrap();
+        assert!(!cfg.device.edl, "the xaga has BROM, not an EDL the running system enters");
+    }
+
+    #[test]
     fn parses_minimal() {
         let cfg = DeviceConfig::parse("[device]\ncodename = \"nezha\"\n").unwrap();
         assert_eq!(cfg.device.codename, "nezha");
         assert!(cfg.device.ab);
+        assert!(cfg.device.edl, "EDL is offered unless a phone says it has none");
         assert_eq!(cfg.device.os_version_prop, "ro.build.display.id");
         assert_eq!(cfg.modules.sources, default_module_sources());
         assert!(cfg.modules.load.is_empty());

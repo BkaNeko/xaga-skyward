@@ -300,7 +300,8 @@ pub fn home(cx: &Ctx) -> Frame {
         Action::Open(Screen::Decrypt),
     ]));
     y = tools.bottom + t.m.card_gap;
-    let target = l.pick(REBOOT_TARGETS[cx.state.reboot].0);
+    let chosen_target = if cx.state.edl || TARGETS[cx.state.reboot] != Target::Edl { cx.state.reboot } else { 0 };
+    let target = l.pick(REBOOT_TARGETS[chosen_target].0);
     let system = widgets::list(&mut c, t, f, y, &[
         Row::new(l.pick(["清除数据", "清除資料", "Wipe data"])).icon(RED, Icon::Wipe),
         Row::new(l.pick(ADVANCED)).icon(SLATE, Icon::More),
@@ -814,10 +815,11 @@ pub fn reboot(cx: &Ctx) -> Frame {
     let mut out = Vec::new();
     let top = t.m.content_top;
     let mut y = widgets::section_first(&mut c, t, f, top, l.pick(["重启到", "重新啟動到", "Reboot to"]));
-    let rows: Vec<Row> = REBOOT_TARGETS
+    let shown: Vec<usize> = (0..TARGETS.len()).filter(|&k| s.edl || TARGETS[k] != Target::Edl).collect();
+    let rows: Vec<Row> = shown
         .iter()
-        .enumerate()
-        .map(|(k, &(title, sub))| {
+        .map(|&k| {
+            let (title, sub) = REBOOT_TARGETS[k];
             let r = Row::new(l.pick(title)).trail(Trail::Check(s.reboot == k));
             match sub {
                 Some(text) => r.subtitle(l.pick(text)),
@@ -826,7 +828,7 @@ pub fn reboot(cx: &Ctx) -> Frame {
         })
         .collect();
     let targets = widgets::list(&mut c, t, f, y, &rows);
-    let picks: Vec<Action> = (0..TARGETS.len()).map(Action::RebootTarget).collect();
+    let picks: Vec<Action> = shown.iter().map(|&k| Action::RebootTarget(k)).collect();
     out.extend(hits(&targets.rows, &picks));
     y = targets.bottom;
     if let Some(slot) = cx.info.slot {

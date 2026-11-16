@@ -1369,6 +1369,7 @@ impl<'a> Pages<'a> {
         let by_name = Path::new(skyward_block::BY_NAME);
         let both = |base: &str| -> Result<bool> { Ok(by_name.join(format!("{base}_a")).try_exists()? && by_name.join(format!("{base}_b")).try_exists()?) };
         app.state.recovery_partition = cfg.device.recovery_partition.clone();
+        app.state.edl = cfg.device.edl;
         app.state.recovery_partitions = both(&app.state.recovery_partition)?;
         app.state.dual_boot = app.state.recovery_partitions && both("boot")? && both("init_boot")?;
         // The second system's work; the systems are read at once, for the home

@@ -50,6 +50,8 @@ pub struct State {
     /// own, or `vendor_boot` on a phone whose recovery rides in the vendor
     /// boot image.
     pub recovery_partition: String,
+    /// The phone has Qualcomm's EDL mode to reboot into.
+    pub edl: bool,
     /// The phone keeps its recovery in a partition of each slot, which the
     /// install page then offers to keep Skyward in.
     pub recovery_partitions: bool,
@@ -212,6 +214,7 @@ impl Default for State {
             script_output: Vec::new(),
             check_signature: false,
             recovery_partition: "recovery".into(),
+            edl: true,
             recovery_partitions: false,
             keep_recovery: true,
             reflash: None,
