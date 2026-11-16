@@ -279,6 +279,12 @@ pub fn home(cx: &Ctx) -> Frame {
             None => row,
         });
         opens.push(Action::Open(Screen::Systems));
+    } else if let Some(slot) = i.slot {
+        // A phone without the boot and init_boot partitions a second
+        // system needs still has the official A/B switch: the boot slot.
+        let letter = slot.letter();
+        rows.push(Row::new(l.pick(DUAL_BOOT)).icon(PURPLE, Icon::Systems).trail(Trail::Value(letter)));
+        opens.push(Action::Open(Screen::Slot));
     }
     if !rows.is_empty() {
         let first = widgets::list(&mut c, t, f, y, &rows);
