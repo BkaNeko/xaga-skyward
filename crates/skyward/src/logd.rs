@@ -32,10 +32,13 @@ const ROOT: &str = "/system";
 
 /// The log daemon running, which is kept for as long as the recovery runs.
 pub struct Logd {
-    _child: Child,
+    child: Child,
     /// The sockets, held open: a socket with no descriptor open would be
-    /// gone from every program that writes to it.
+    /// gone from every program that writes to it. They outlive the daemon
+    /// itself, so that one started again is reached by the same ones.
     _sockets: Vec<OwnedFd>,
+    /// What init tells the daemon of those sockets.
+    env: Vec<(String, String)>,
 }
 
 impl Logd {
@@ -65,17 +68,35 @@ impl Logd {
             .into_iter()
             .map(|pair| pair.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).expect("each holds a name"))
             .collect();
-        let mut child = Process::new(PROGRAM)
-            .env("ANDROID_ROOT", ROOT)
-            .envs(env)
-            .spawn()
-            .with_context(|| format!("start {PROGRAM}"))?;
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        if let Some(status) = child.try_wait().context("look at the log daemon")? {
-            anyhow::bail!("the log daemon ended as it started: {status}");
-        }
-        Ok(Logd { _child: child, _sockets: sockets })
+        let child = start(&env)?;
+        Ok(Logd { child, _sockets: sockets, env })
     }
+
+    /// Start the daemon again where it has ended: init does as much for the
+    /// one it starts, and a daemon nothing restarts takes the phone's own
+    /// programs' logs with it for the rest of the boot. What ended it is said
+    /// in the kernel log.
+    pub fn still_running(&mut self) -> Result<()> {
+        let Some(status) = self.child.try_wait().context("look at the log daemon")? else { return Ok(()) };
+        skyward_sys::kmsg(&format!("logd ended ({status}); starting it again"))?;
+        self.child = start(&self.env)?;
+        Ok(())
+    }
+}
+
+/// Run the daemon on the sockets the environment names, and see that it is
+/// still there once it has had a moment to fail in.
+fn start(env: &[(String, String)]) -> Result<Child> {
+    let mut child = Process::new(PROGRAM)
+        .env("ANDROID_ROOT", ROOT)
+        .envs(env.iter().map(|(name, value)| (name.as_str(), value.as_str())))
+        .spawn()
+        .with_context(|| format!("start {PROGRAM}"))?;
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    if let Some(status) = child.try_wait().context("look at the log daemon")? {
+        anyhow::bail!("the log daemon ended as it started: {status}");
+    }
+    Ok(child)
 }
 
 /// A socket of `kind` bound at `path`, as init binds the ones it hands on.

@@ -593,7 +593,7 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
         skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
     }
     if !cfg.owners.is_empty() {
-        let given = handover::give(&cfg.owners)?;
+        let given = handover::give(&cfg.owners, FILES_MADE)?;
         skyward_sys::kmsg(&format!("{} of the phone's own files handed to the accounts its init gives them", given.handed))?;
         if !given.missing.is_empty() {
             skyward_sys::kmsg(&format!("{} of them the kernel made none of this boot: {}", given.missing.len(), given.missing.join(", ")))?;
@@ -650,6 +650,13 @@ fn bring_up(cfg: &DeviceConfig, slot: skyward_vab::Slot, found: Result<keys::Fou
     agree_on_the_notes_key(&registering)
 }
 
+/// How long a file the modules just loaded make may take to be there before
+/// it is passed over: a driver makes its own as it takes its device up, and
+/// ueventd makes the device's node once the kernel has told it of the device,
+/// either of which may come after the load of the module returns.
+#[cfg(target_os = "android")]
+const FILES_MADE: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The folder the recovery's own programs load their libraries from.
 #[cfg(target_os = "android")]
 const RECOVERY_LIBRARIES: &str = "/system/lib64";
@@ -680,9 +687,21 @@ fn start_logd(wanted: &skyward_config::Logd) -> Result<()> {
 }
 
 /// The log daemon where Skyward started it, kept for as long as the
-/// recovery runs.
+/// recovery runs, and looked at now and then: one that ends is started again,
+/// as init would start its own.
 #[cfg(target_os = "android")]
 static LOGD_RUNNING: std::sync::Mutex<Option<logd::Logd>> = std::sync::Mutex::new(None);
+
+/// Look at the log daemon Skyward started, and start it again where it has
+/// ended. Where the phone's own init started it, there is nothing to look at.
+#[cfg(target_os = "android")]
+pub fn watch_logd() -> Result<()> {
+    let mut running = LOGD_RUNNING.lock().expect("the log daemon is not held by a thread that panicked");
+    match running.as_mut() {
+        Some(logd) => logd.still_running(),
+        None => Ok(()),
+    }
+}
 
 /// Have the parts of the secure world that keep keys agree on the key they
 /// sign their notes with, where the phone has any that do. Android's key

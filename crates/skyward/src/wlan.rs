@@ -703,8 +703,12 @@ fn bring_up_driver(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         // The drivers make their nodes a moment after the modules are in,
         // and a recovery's ueventd makes them root's alone while the
         // phone's own programs run under other accounts.
-        crate::handover::wait_for_nodes(&cfg.nodes, NODE_WAIT);
-        crate::handover::give(&cfg.nodes)?;
+        // The waiting is the handover's own, and the nodes it passes over
+        // are worth saying: the chip cannot be switched on without them.
+        let given = crate::handover::give(&cfg.nodes, NODE_WAIT)?;
+        if !given.missing.is_empty() {
+            let _ = skyward_sys::kmsg(&format!("the WLAN's nodes are not there: {}", given.missing.join(", ")));
+        }
         // What writes the chip's settings waits for the driver's node and
         // writes them once, so a bring-up later in the same boot finds the
         // property already set and has nothing to wait for.

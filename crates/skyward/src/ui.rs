@@ -1704,6 +1704,9 @@ impl<'a> Pages<'a> {
         if let Some(h) = &mut self.haptics {
             h.ticks()?;
         }
+        // The phone's own programs log to the daemon for as long as it runs;
+        // one that ended without this would take their logs with it.
+        crate::watch_logd()?;
         Ok(())
     }
 
