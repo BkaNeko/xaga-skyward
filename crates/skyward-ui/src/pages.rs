@@ -12,6 +12,7 @@ use crate::fmt::{self, Verb};
 use crate::font::Fonts;
 use crate::geom::Rect;
 use crate::lang::{same, Lang, Text};
+use crate::portrait::Portrait;
 use crate::search;
 use crate::term::{self, Term};
 use crate::texts;
@@ -26,6 +27,44 @@ use skyward_net::wlan::{Bands, Network, Power, Stage as Joining};
 use skyward_systems::{Held, Who};
 use skyward_vab::{Slot, Standing};
 use std::path::Path;
+use std::sync::OnceLock;
+
+/// Where the packer puts the photo of the phone a build carries, if it has
+/// one: `devices/<codename>.png` beside the configuration.
+const PORTRAIT: &str = "/skyward/portrait.png";
+
+/// The portrait, read once; none where the build carries none.
+static PORTRAIT_IMAGE: OnceLock<Option<Portrait>> = OnceLock::new();
+
+/// Why the photo could not be read, taken once it has been said.
+static PORTRAIT_FAILED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn portrait() -> Option<&'static Portrait> {
+    PORTRAIT_IMAGE
+        .get_or_init(|| {
+            // The host's previews have no ramdisk to read it from, and name
+            // one of their own where they draw a phone that has a photo.
+            let named = std::env::var_os("SKYWARD_PORTRAIT").map(std::path::PathBuf::from);
+            let path = named.as_deref().unwrap_or_else(|| Path::new(PORTRAIT));
+            match Portrait::load(path) {
+                Ok(portrait) => portrait,
+                // The card draws the stock outline without it, and why it is
+                // missing is worth saying rather than leaving unexplained.
+                Err(e) => {
+                    *PORTRAIT_FAILED.lock().expect("the reason is not held by a thread that panicked") =
+                        Some(format!("{e:#}"));
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+/// Why the build's photo is not shown, where one was carried and could not
+/// be read: said once in the kernel log as the recovery starts.
+pub fn portrait_failed() -> Option<String> {
+    PORTRAIT_FAILED.lock().expect("the reason is not held by a thread that panicked").take()
+}
 
 // The colours the stock Settings fills its icons' tiles with, the same in
 // light and dark mode.
@@ -237,7 +276,7 @@ pub fn home(cx: &Ctx) -> Frame {
         rows.push(Row::new(l.pick(texts::systems::SECOND_FAILED)).icon(RED, Icon::Systems).subtitle(why).trail(Trail::Arrow));
         opens.push(Some(Action::Open(Screen::Systems)));
     }
-    let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows);
+    let card = widgets::device_card(&mut c, t, f, y, &i.model, &sub, &rows, portrait());
     out.push(Hit { rect: card.rows[0], action: Action::Open(Screen::About) });
     out.extend(card.rows[1..].iter().zip(&opens).filter_map(|(&rect, open)| open.map(|action| Hit { rect, action })));
     y = card.bottom + t.m.card_gap;

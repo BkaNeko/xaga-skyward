@@ -1354,6 +1354,11 @@ impl<'a> Pages<'a> {
             app.set_boot_slots(read_slots());
         }
         app.set_asked(asked(&request));
+        // A photo the build carries and the recovery cannot read is drawn as
+        // the stock outline, and the reason is worth a line of its own.
+        if let Some(why) = skyward_ui::pages::portrait_failed() {
+            skyward_sys::kmsg(&format!("the phone's photo is not shown: {why}"))?;
+        }
         let screen = Canvas::new(w, h);
         // A page sliding over another draws on three screens' worth of canvas
         // besides the panel's: made ready now, the first slide finds them so.
