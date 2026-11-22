@@ -53,6 +53,15 @@ pub fn set(config: &str, timeout: Duration) -> Result<()> {
 /// serving it and takes every function off; init then sets the port up
 /// once the programs behind the new configuration are ready.
 pub fn switch(config: &str, timeout: Duration) -> Result<()> {
+    // File transfer comes and goes beside adb, and adbd need not be stopped
+    // for it: a port that already runs adb takes the second function on as
+    // it is, and gives it up the same way. Going through "none" would stop
+    // adbd and start it again, and a recovery whose ramdisk carries the
+    // phone's own libraries keeps that from being a thing to do for a
+    // function that comes and goes.
+    if matches!((prop("sys.usb.state").as_deref(), config), (Some("adb"), "mtp,adb" | "sideload") | (Some("mtp,adb" | "sideload"), "adb")) {
+        return set(config, timeout);
+    }
     set("none", timeout)?;
     match set(config, timeout) {
         Ok(()) => Ok(()),

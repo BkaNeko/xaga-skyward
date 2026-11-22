@@ -17,6 +17,10 @@ on property:sys.usb.config=mtp,adb && property:sys.usb.ffs.ready=1 && property:s
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
 
-# The stock rules take the first function off; this takes the second.
+# The stock rules take the first function off where the port goes to nothing,
+# and where it goes back to adb alone; this takes the second with them.
 on property:sys.usb.config=none && property:sys.usb.configfs=1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+
+on property:sys.usb.config=adb && property:sys.usb.configfs=1
     rm /config/usb_gadget/g1/configs/b.1/f2
