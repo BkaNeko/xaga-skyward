@@ -129,6 +129,12 @@ pub struct Wlan {
     /// there. The switch-on waits for it, for a while.
     #[serde(default)]
     pub settings: Option<Property>,
+    /// Whether the chip is switched on as the recovery starts, rather than
+    /// when the pages first ask for it. A chip that has only just been
+    /// powered runs its calibration on the first switch-on, a minute or so
+    /// that the recovery can spend while the pages are being looked at.
+    #[serde(default)]
+    pub prewarm: bool,
     /// What is written once they are in, each value to its file, such as
     /// what tells a platform driver it may start the chip.
     #[serde(default)]

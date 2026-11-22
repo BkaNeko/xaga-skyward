@@ -54,8 +54,15 @@ const SCAN_WAIT: Duration = Duration::from_secs(15);
 const SCAN_SETTLE: Duration = Duration::from_secs(20);
 
 /// How long the drivers may take to make their nodes once the modules are
-/// loaded.
-const NODE_WAIT: Duration = Duration::from_secs(10);
+/// loaded: a driver makes its own as it is loaded, so this is the wait for
+/// ueventd rather than for the chip.
+const NODE_WAIT: Duration = Duration::from_secs(4);
+
+/// How often the chip is asked to switch on while it is still calibrating:
+/// it answers the first ask with an error and begins starting all the same,
+/// so asking again a moment later is what takes the wait out of the
+/// switch-on.
+const WRITE_AGAIN: Duration = Duration::from_secs(2);
 
 /// Where the bring-up is held, which the phone's own programs and a
 /// command run over adb can both reach.
@@ -684,6 +691,11 @@ impl BringingUp {
 /// interface up, with the bring-up already this program's.
 fn bring_up_driver(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
     let net = Path::new("/sys/class/net").join(&cfg.interface);
+    // What each stage of the switch-on took, said in the kernel log: the
+    // chip's own calibration is the slow part, and telling it apart from
+    // what the recovery does around it is what makes it shorter.
+    let began = Instant::now();
+    let since = |began: Instant| began.elapsed().as_millis();
     if !net.exists() {
         for mount in &cfg.mounts {
             let at = Path::new(&mount.at);
@@ -697,15 +709,19 @@ fn bring_up_driver(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
         for file in &cfg.firmware {
             place(file)?;
         }
+        let loading = Instant::now();
         for path in skyward_modules::load(modules, &cfg.modules)? {
             skyward_sys::kmsg(&format!("loaded {}", path.display()))?;
         }
+        let _ = skyward_sys::kmsg(&format!("the WLAN's modules are in after {} ms", since(loading)));
         // The drivers make their nodes a moment after the modules are in,
         // and a recovery's ueventd makes them root's alone while the
         // phone's own programs run under other accounts.
         // The waiting is the handover's own, and the nodes it passes over
         // are worth saying: the chip cannot be switched on without them.
+        let handing = Instant::now();
         let given = crate::handover::give(&cfg.nodes, NODE_WAIT)?;
+        let _ = skyward_sys::kmsg(&format!("the WLAN's nodes are handed over after {} ms", since(handing)));
         if !given.missing.is_empty() {
             let _ = skyward_sys::kmsg(&format!("the WLAN's nodes are not there: {}", given.missing.join(", ")));
         }
@@ -722,9 +738,18 @@ fn bring_up_driver(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
                 }
             }
         }
-        let tries = cfg.attempts.max(1);
+        // The chip is switched on again while it is still calibrating: a
+        // first switch-on during the calibration is answered with an error,
+        // and waiting a whole interface's wait before asking again would let
+        // the chip sit idle for as long as the wait lasts after it has
+        // finished. Asked again every [`WRITE_AGAIN`] instead, the switch-on
+        // lands as soon as the chip is ready, and the whole of what the phone
+        // asked for stays the same.
+        let until = Instant::now() + INTERFACE_WAIT * cfg.attempts.max(1);
         let mut refused = None;
-        for attempt in 1..=tries {
+        let mut asked = 0;
+        while !net.exists() && Instant::now() < until {
+            asked += 1;
             refused = None;
             for w in &cfg.writes {
                 if let Err(e) = fs::write(&w.path, &w.value) {
@@ -734,23 +759,20 @@ fn bring_up_driver(cfg: &Config, modules: &[PathBuf]) -> Result<()> {
                     refused = Some(format!("writing {} to {} was refused: {e}", w.value, w.path));
                 }
             }
-            // A chip that refuses the write has often begun starting all
-            // the same, so the interface is waited for just as long.
-            let until = Instant::now() + INTERFACE_WAIT;
-            while !net.exists() && Instant::now() < until {
+            let again = Instant::now() + WRITE_AGAIN;
+            while !net.exists() && Instant::now() < again && Instant::now() < until {
                 thread::sleep(Duration::from_millis(100));
             }
-            if net.exists() {
-                break;
-            }
-            if attempt < tries {
-                let _ = skyward_sys::kmsg(&format!("{} did not come up on try {attempt} of {tries}", cfg.interface));
-            }
         }
+        let _ = skyward_sys::kmsg(&format!(
+            "{} was switched on {asked} times over {} ms",
+            cfg.interface,
+            since(began)
+        ));
         if !net.exists() {
             match refused {
-                Some(refused) => bail!("the driver made no {} in {tries} tries, and {refused}", cfg.interface),
-                None => bail!("the driver made no {} in {tries} tries", cfg.interface),
+                Some(refused) => bail!("the driver made no {} in {} ms, and {refused}", cfg.interface, since(began)),
+                None => bail!("the driver made no {} in {} ms", cfg.interface, since(began)),
             }
         }
     }

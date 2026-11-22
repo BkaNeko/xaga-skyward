@@ -1605,6 +1605,20 @@ impl<'a> Pages<'a> {
                 let _ = skyward_sys::kmsg(&format!("the vendor interface's libraries are not open: {e:#}"));
                 None
             });
+            // A chip told to switch on as the recovery starts runs its
+            // calibration while the pages are being looked at, and the switch
+            // on the page then finds it ready.
+            if w.prewarm {
+                let (warming, warm_modules) = (w.clone(), modules.clone());
+                std::thread::spawn(move || match wlan::bring_up(&warming, &warm_modules) {
+                    Ok(()) => {
+                        let _ = skyward_sys::kmsg("the WLAN is switched on ahead of the pages");
+                    }
+                    Err(e) => {
+                        let _ = skyward_sys::kmsg(&format!("the WLAN is not switched on ahead of time: {e:#}"));
+                    }
+                });
+            }
             self.wlan = Some(wlan::Worker::start(w.clone(), modules, libraries, self.servers.clone())?);
         }
         self.scanned_at = Instant::now();

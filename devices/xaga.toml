@@ -72,6 +72,10 @@ settings = { property = "vendor.mtk.nvram.ready", value = "1" }
 # the interface appears once it is through, so the write is made again.
 writes = [{ path = "/dev/wmtWifi", value = "1" }]
 attempts = 5
+# The chip runs its calibration on the first switch-on, which takes about a
+# minute; switching it on as the recovery starts spends that while the pages
+# are being looked at, so the WLAN page then has it in a second or two.
+prewarm = true
 interface = "wlan0"
 supplicant = "/vendor/bin/hw/wpa_supplicant"
 libraries = ["/vendor/lib64/vndk", "/system/lib64", "/vendor/lib64"]
