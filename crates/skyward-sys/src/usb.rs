@@ -29,7 +29,16 @@ pub fn set_mtp(on: bool) {
 /// also waits for adbd to be gone, so its function is free.
 pub fn set(config: &str, timeout: Duration) -> Result<()> {
     set_prop("sys.usb.config", config)?;
-    wait_prop("sys.usb.state", config, timeout)?;
+    if let Err(e) = wait_prop("sys.usb.state", config, timeout) {
+        // The port goes to what was asked of it only once every program
+        // behind the functions has said it is ready; which of them has not
+        // is what the phone cannot say for itself.
+        let said = ["sys.usb.state", "sys.usb.ffs.ready", "sys.usb.ffs.mtp.ready", "init.svc.adbd"]
+            .map(|name| format!("{name}={:?}", prop(name)))
+            .join(" ");
+        let _ = crate::kmsg(&format!("{config} was asked of the port, and after {} ms: {said}", timeout.as_millis()));
+        return Err(e);
+    }
     if config == "none" {
         let start = Instant::now();
         while !matches!(prop("init.svc.adbd").as_deref(), None | Some("stopped")) {
@@ -45,5 +54,14 @@ pub fn set(config: &str, timeout: Duration) -> Result<()> {
 /// once the programs behind the new configuration are ready.
 pub fn switch(config: &str, timeout: Duration) -> Result<()> {
     set("none", timeout)?;
-    set(config, timeout)
+    match set(config, timeout) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // A port left at nothing has no adb either, so the phone cannot
+            // be reached to say why it is that way; adb alone is asked for
+            // again, and the reason is still the caller's to say.
+            let _ = set("adb", timeout);
+            Err(e)
+        }
+    }
 }

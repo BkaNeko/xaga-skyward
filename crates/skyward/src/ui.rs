@@ -3048,7 +3048,13 @@ impl Pages<'_> {
     /// port goes through "none"; then the slot's partitions come up as at
     /// boot.
     fn enter_recovery(&mut self) -> Result<()> {
-        skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT)?;
+        // The pages come up whether the port does or not: a port that will
+        // not take its functions back is said in the kernel log and on the
+        // screen, and the recovery goes on.
+        if let Err(e) = skyward_sys::usb::switch(skyward_sys::usb::resting(), USB_TIMEOUT) {
+            skyward_sys::kmsg(&format!("the port did not come back from fastboot: {e:#}"))?;
+            self.app.report(&format!("{e:#}"), monotonic_ms());
+        }
         let slot = skyward_vab::current_slot()?.context("not an A/B phone")?;
         crate::prepare(self.cfg, slot)?;
         self.read_at = Instant::now();
